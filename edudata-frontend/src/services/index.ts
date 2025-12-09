@@ -12,9 +12,12 @@ export const authService = {
 
 // Student Services
 export const studentService = {
+  getAll: () => apiService.get<Student[]>('/students'),
   getProfile: (id: string) => apiService.get<Student>(`/students/${id}`),
+  create: (data: Omit<Student, 'id'>) => apiService.post<Student>('/students', data),
   updateProfile: (id: string, data: Partial<Student>) => 
     apiService.put<Student>(`/students/${id}`, data),
+  delete: (id: string) => apiService.delete(`/students/${id}`),
   getAcademicProgress: (id: string) => apiService.get(`/students/${id}/progress`),
   getScholarships: (id: string) => apiService.get(`/students/${id}/scholarships`),
   applyForScheme: (studentId: string, schemeId: string) => 

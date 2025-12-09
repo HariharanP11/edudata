@@ -7,6 +7,7 @@ exports.signup = signup;
 exports.login = login;
 exports.verifyOtp = verifyOtp;
 exports.resendOtp = resendOtp;
+exports.resendOtpEmail = resendOtpEmail;
 exports.me = me;
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
@@ -14,6 +15,7 @@ const crypto_1 = __importDefault(require("crypto"));
 const User_1 = __importDefault(require("../models/User"));
 const Otp_1 = __importDefault(require("../models/Otp"));
 const twilio_1 = __importDefault(require("twilio"));
+const emailOtp_1 = require("../utils/emailOtp");
 const JWT_SECRET = process.env.JWT_SECRET || "changeme";
 // OTP config from env (defaults)
 // NOTE: We enable OTP by default. Set ENABLE_OTP="false" in .env to fall back to single-step login.
@@ -36,8 +38,9 @@ if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) {
         twilioClient = null;
     }
 }
-/** Helper: send OTP to contact (phone). Falls back to console.log */
+/** Helper: send OTP to contact (phone/email). Falls back to console.log */
 async function sendOtpToContact(contact, code) {
+    // 1) Try SMS via Twilio when contact looks like a phone number
     if (twilioClient && contact && contact.startsWith("+")) {
         // phone format expected like +91xxxxxxxxxx
         try {
@@ -50,10 +53,17 @@ async function sendOtpToContact(contact, code) {
         }
         catch (err) {
             console.warn("Twilio send failed:", err);
-            // fallthrough to console fallback
+            // fallthrough to email/console fallback
         }
     }
-    // Fallback (development): print OTP to server console
+    // 2) Try email via Gmail when contact looks like an email address
+    if (contact && contact.includes("@")) {
+        const ok = await (0, emailOtp_1.sendEmailOtp)(contact, code, OTP_EXPIRY_MINUTES);
+        if (ok) {
+            return { via: "email" };
+        }
+    }
+    // 3) Fallback (development): print OTP to server console
     console.log(`[OTP] contact=${contact} code=${code}`);
     return { via: "console" };
 }
@@ -235,6 +245,58 @@ async function resendOtp(req, res) {
     }
     catch (err) {
         console.error("resendOtp error:", err);
+        res.status(500).json({ error: String(err) });
+    }
+}
+// ------------------- resend OTP to email explicitly (uses user's registered email) -------------------
+async function resendOtpEmail(req, res) {
+    try {
+        const { sessionToken } = req.body;
+        if (!sessionToken)
+            return res.status(400).json({ message: "sessionToken required" });
+        const old = await Otp_1.default.findOne({ token: sessionToken });
+        if (!old)
+            return res.status(400).json({ message: "Invalid sessionToken" });
+        if (old.used)
+            return res.status(400).json({ message: "OTP already used" });
+        // Look up user to get email
+        const user = await User_1.default.findById(old.userId);
+        if (!user || !user.email) {
+            return res.status(400).json({ message: "User email not available for OTP" });
+        }
+        const emailContact = user.email;
+        // Rate-limit check by email contact
+        const windowAgo = new Date(Date.now() - OTP_RATE_LIMIT_WINDOW_MINUTES * 60000);
+        const recentCount = await Otp_1.default.countDocuments({
+            contact: emailContact,
+            createdAt: { $gte: windowAgo },
+        });
+        if (recentCount >= OTP_RATE_LIMIT_COUNT) {
+            return res.status(429).json({
+                message: `Too many OTP attempts. Try again after ${OTP_RATE_LIMIT_WINDOW_MINUTES} minutes.`,
+            });
+        }
+        // Create new OTP specifically for email
+        const code = String(Math.floor(Math.random() * 10 ** OTP_LENGTH)).padStart(OTP_LENGTH, "0");
+        const newToken = crypto_1.default.randomBytes(16).toString("hex");
+        const hashed = await bcryptjs_1.default.hash(code, 10);
+        const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60000);
+        await Otp_1.default.create({
+            token: newToken,
+            userId: old.userId,
+            contact: emailContact,
+            code: hashed,
+            expiresAt,
+            used: false,
+        });
+        const sent = await (0, emailOtp_1.sendEmailOtp)(emailContact, code, OTP_EXPIRY_MINUTES);
+        if (!sent) {
+            return res.status(500).json({ message: "Failed to send OTP email" });
+        }
+        res.json({ sessionToken: newToken, message: "OTP sent to registered email" });
+    }
+    catch (err) {
+        console.error("resendOtpEmail error:", err);
         res.status(500).json({ error: String(err) });
     }
 }

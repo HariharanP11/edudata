@@ -4,6 +4,27 @@ import Navbar from "@/components/Navbar";
 import StatsCard from "@/components/StatsCard";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Users,
   BookOpen,
@@ -11,8 +32,13 @@ import {
   TrendingUp,
   GraduationCap,
   FileText,
+  Plus,
+  Edit,
+  Trash2,
 } from "lucide-react";
-import { teachers, students, departments, institutions } from "@/data/mockData";
+import { teachers as initialTeachers, students as initialStudents, departments, institutions } from "@/data/mockData";
+import { Student } from "@/data/mockData";
+import { toast } from "sonner";
 import {
   BarChart,
   Bar,
@@ -32,7 +58,41 @@ const TeacherDashboard = () => {
   const [teacher, setTeacher] = useState<any>(null);
   const [department, setDepartment] = useState<any>(null);
   const [institution, setInstitution] = useState<any>(null);
-  const [deptStudents, setDeptStudents] = useState<any[]>([]);
+  const [deptStudents, setDeptStudents] = useState<Student[]>([]);
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  
+  // Student Management States
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
+  const [formData, setFormData] = useState<Partial<Student>>({
+    name: "",
+    email: "",
+    aadhaarLast4: "",
+    year: 1,
+    cgpa: 0,
+    attendance: 0,
+    projects: 0,
+    placementStatus: "Not Placed",
+    scholarships: [],
+    internships: [],
+  });
+
+  // Load students from localStorage or use initial data
+  const loadStudents = () => {
+    const stored = localStorage.getItem("studentsData");
+    const studentsData = stored ? JSON.parse(stored) : initialStudents;
+    setAllStudents(studentsData);
+    return studentsData;
+  };
+
+  // Save students to localStorage
+  const saveStudents = (studentsList: Student[]) => {
+    localStorage.setItem("studentsData", JSON.stringify(studentsList));
+    setAllStudents(studentsList);
+  };
 
   useEffect(() => {
     const isAuth = localStorage.getItem("isAuthenticated");
@@ -44,17 +104,31 @@ const TeacherDashboard = () => {
       return;
     }
 
-    const teacherData = teachers.find((t) => t.aparId === userId);
+    // Load teachers from localStorage or use initial data
+    const storedTeachers = localStorage.getItem("teachersData");
+    const teachersData = storedTeachers ? JSON.parse(storedTeachers) : initialTeachers;
+    
+    const teacherData = teachersData.find((t: any) => t.aparId === userId);
     if (teacherData) {
       setTeacher(teacherData);
       const dept = departments.find((d) => d.id === teacherData.departmentId);
       setDepartment(dept);
       const inst = institutions.find((i) => i.id === teacherData.institutionId);
       setInstitution(inst);
-      const studentsInDept = students.filter((s) => s.departmentId === teacherData.departmentId);
+      
+      const studentsData = loadStudents();
+      const studentsInDept = studentsData.filter((s: Student) => s.departmentId === teacherData.departmentId);
       setDeptStudents(studentsInDept);
     }
   }, [navigate]);
+
+  // Refresh department students when allStudents changes
+  useEffect(() => {
+    if (teacher) {
+      const studentsInDept = allStudents.filter((s) => s.departmentId === teacher.departmentId);
+      setDeptStudents(studentsInDept);
+    }
+  }, [allStudents, teacher]);
 
   if (!teacher || !department || !institution) {
     return <div>Loading...</div>;
@@ -65,6 +139,109 @@ const TeacherDashboard = () => {
     localStorage.removeItem("userRole");
     localStorage.removeItem("userId");
     navigate("/");
+  };
+
+  // Student CRUD Operations
+  const handleAddStudent = () => {
+    setFormData({
+      name: "",
+      email: "",
+      aadhaarLast4: "",
+      year: 1,
+      cgpa: 0,
+      attendance: 0,
+      projects: 0,
+      placementStatus: "Not Placed",
+      scholarships: [],
+      internships: [],
+      departmentId: teacher?.departmentId,
+      institutionId: teacher?.institutionId,
+    });
+    setSelectedStudent(null);
+    setIsAddDialogOpen(true);
+  };
+
+  const handleEditStudent = (student: Student) => {
+    setSelectedStudent(student);
+    setFormData({
+      name: student.name,
+      email: student.email,
+      aadhaarLast4: student.aadhaarLast4,
+      year: student.year,
+      cgpa: student.cgpa,
+      attendance: student.attendance,
+      projects: student.projects,
+      placementStatus: student.placementStatus,
+      scholarships: student.scholarships || [],
+      internships: student.internships || [],
+      placementCompany: student.placementCompany,
+      placementPackage: student.placementPackage,
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleDeleteStudent = (student: Student) => {
+    setStudentToDelete(student);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const saveStudent = () => {
+    if (!formData.name || !formData.email) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+
+    const studentsList = [...allStudents];
+
+    if (selectedStudent) {
+      // Update existing student
+      const index = studentsList.findIndex((s) => s.id === selectedStudent.id);
+      if (index !== -1) {
+        studentsList[index] = {
+          ...selectedStudent,
+          ...formData,
+        } as Student;
+        saveStudents(studentsList);
+        toast.success("Student updated successfully");
+        setIsEditDialogOpen(false);
+      }
+    } else {
+      // Create new student
+      const newStudent: Student = {
+        id: `stud${Date.now()}`,
+        ...formData,
+        departmentId: teacher?.departmentId || "",
+        institutionId: teacher?.institutionId || "",
+      } as Student;
+      studentsList.push(newStudent);
+      saveStudents(studentsList);
+      toast.success("Student added successfully");
+      setIsAddDialogOpen(false);
+    }
+
+    setFormData({
+      name: "",
+      email: "",
+      aadhaarLast4: "",
+      year: 1,
+      cgpa: 0,
+      attendance: 0,
+      projects: 0,
+      placementStatus: "Not Placed",
+      scholarships: [],
+      internships: [],
+    });
+    setSelectedStudent(null);
+  };
+
+  const confirmDelete = () => {
+    if (studentToDelete) {
+      const studentsList = allStudents.filter((s) => s.id !== studentToDelete.id);
+      saveStudents(studentsList);
+      toast.success("Student deleted successfully");
+      setIsDeleteDialogOpen(false);
+      setStudentToDelete(null);
+    }
   };
 
   // Student performance data
@@ -262,25 +439,34 @@ const TeacherDashboard = () => {
           </Card>
         </div>
 
-        {/* Students Table */}
+        {/* Students Management Section */}
         <Card className="p-6">
-          <h3 className="text-lg font-semibold mb-4 text-foreground">Department Students</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-foreground">Department Students Management</h3>
+            <Button onClick={handleAddStudent} className="bg-gradient-primary hover:opacity-90">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Student
+            </Button>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
                   <th className="text-left p-3 text-muted-foreground font-medium">Name</th>
+                  <th className="text-left p-3 text-muted-foreground font-medium">Email</th>
                   <th className="text-left p-3 text-muted-foreground font-medium">Year</th>
                   <th className="text-left p-3 text-muted-foreground font-medium">CGPA</th>
                   <th className="text-left p-3 text-muted-foreground font-medium">Attendance</th>
                   <th className="text-left p-3 text-muted-foreground font-medium">Projects</th>
                   <th className="text-left p-3 text-muted-foreground font-medium">Status</th>
+                  <th className="text-left p-3 text-muted-foreground font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {deptStudents.map((student) => (
                   <tr key={student.id} className="border-b border-border hover:bg-muted/50">
                     <td className="p-3 text-foreground">{student.name}</td>
+                    <td className="p-3 text-muted-foreground text-sm">{student.email}</td>
                     <td className="p-3 text-foreground">{student.year}</td>
                     <td className="p-3">
                       <span
@@ -320,12 +506,334 @@ const TeacherDashboard = () => {
                         {student.placementStatus}
                       </Badge>
                     </td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEditStudent(student)}
+                          className="h-8 w-8 p-0"
+                        >
+                          <Edit className="h-4 w-4 text-primary" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteStudent(student)}
+                          className="h-8 w-8 p-0"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
+                {deptStudents.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                      No students found. Click "Add Student" to add a new student.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         </Card>
+
+        {/* Add Student Dialog */}
+        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Add New Student</DialogTitle>
+              <DialogDescription>
+                Fill in the student information. All fields marked with * are required.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Name *</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="Enter student name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email *</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    placeholder="student@example.com"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="aadhaarLast4">Aadhaar (Last 4 digits)</Label>
+                  <Input
+                    id="aadhaarLast4"
+                    value={formData.aadhaarLast4}
+                    onChange={(e) => setFormData({ ...formData, aadhaarLast4: e.target.value })}
+                    placeholder="1234"
+                    maxLength={4}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="year">Year *</Label>
+                  <Input
+                    id="year"
+                    type="number"
+                    min="1"
+                    max="4"
+                    value={formData.year}
+                    onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) || 1 })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="cgpa">CGPA *</Label>
+                  <Input
+                    id="cgpa"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="10"
+                    value={formData.cgpa}
+                    onChange={(e) => setFormData({ ...formData, cgpa: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="attendance">Attendance (%) *</Label>
+                  <Input
+                    id="attendance"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={formData.attendance}
+                    onChange={(e) => setFormData({ ...formData, attendance: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="projects">Projects</Label>
+                  <Input
+                    id="projects"
+                    type="number"
+                    min="0"
+                    value={formData.projects}
+                    onChange={(e) => setFormData({ ...formData, projects: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="placementStatus">Placement Status</Label>
+                  <select
+                    id="placementStatus"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={formData.placementStatus}
+                    onChange={(e) => setFormData({ ...formData, placementStatus: e.target.value })}
+                  >
+                    <option value="Not Placed">Not Placed</option>
+                    <option value="Placed">Placed</option>
+                  </select>
+                </div>
+              </div>
+              {formData.placementStatus === "Placed" && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="placementCompany">Company</Label>
+                    <Input
+                      id="placementCompany"
+                      value={formData.placementCompany || ""}
+                      onChange={(e) => setFormData({ ...formData, placementCompany: e.target.value })}
+                      placeholder="Company name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="placementPackage">Package (LPA)</Label>
+                    <Input
+                      id="placementPackage"
+                      type="number"
+                      value={formData.placementPackage || ""}
+                      onChange={(e) => setFormData({ ...formData, placementPackage: parseInt(e.target.value) || 0 })}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={saveStudent} className="bg-gradient-primary">
+                Add Student
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Student Dialog */}
+        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Student</DialogTitle>
+              <DialogDescription>
+                Update the student information. All fields marked with * are required.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-name">Name *</Label>
+                  <Input
+                    id="edit-name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="Enter student name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-email">Email *</Label>
+                  <Input
+                    id="edit-email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    placeholder="student@example.com"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-aadhaarLast4">Aadhaar (Last 4 digits)</Label>
+                  <Input
+                    id="edit-aadhaarLast4"
+                    value={formData.aadhaarLast4}
+                    onChange={(e) => setFormData({ ...formData, aadhaarLast4: e.target.value })}
+                    placeholder="1234"
+                    maxLength={4}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-year">Year *</Label>
+                  <Input
+                    id="edit-year"
+                    type="number"
+                    min="1"
+                    max="4"
+                    value={formData.year}
+                    onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) || 1 })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-cgpa">CGPA *</Label>
+                  <Input
+                    id="edit-cgpa"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="10"
+                    value={formData.cgpa}
+                    onChange={(e) => setFormData({ ...formData, cgpa: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-attendance">Attendance (%) *</Label>
+                  <Input
+                    id="edit-attendance"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={formData.attendance}
+                    onChange={(e) => setFormData({ ...formData, attendance: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-projects">Projects</Label>
+                  <Input
+                    id="edit-projects"
+                    type="number"
+                    min="0"
+                    value={formData.projects}
+                    onChange={(e) => setFormData({ ...formData, projects: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-placementStatus">Placement Status</Label>
+                  <select
+                    id="edit-placementStatus"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={formData.placementStatus}
+                    onChange={(e) => setFormData({ ...formData, placementStatus: e.target.value })}
+                  >
+                    <option value="Not Placed">Not Placed</option>
+                    <option value="Placed">Placed</option>
+                  </select>
+                </div>
+              </div>
+              {formData.placementStatus === "Placed" && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-placementCompany">Company</Label>
+                    <Input
+                      id="edit-placementCompany"
+                      value={formData.placementCompany || ""}
+                      onChange={(e) => setFormData({ ...formData, placementCompany: e.target.value })}
+                      placeholder="Company name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-placementPackage">Package (LPA)</Label>
+                    <Input
+                      id="edit-placementPackage"
+                      type="number"
+                      value={formData.placementPackage || ""}
+                      onChange={(e) => setFormData({ ...formData, placementPackage: parseInt(e.target.value) || 0 })}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={saveStudent} className="bg-gradient-primary">
+                Update Student
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the student
+                <strong> {studentToDelete?.name}</strong> from the system.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground">
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

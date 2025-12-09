@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+// src/pages/Login.tsx
+import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,18 +20,19 @@ const dashboardRouteByRole: Record<string, string> = {
   admin: "/dashboard/admin",
 };
 
-const Login = () => {
+const Login: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const initialRole = searchParams.get("role") || "student";
+  const initialRole = (searchParams.get("role") as string) || "student";
 
-  const [selectedRole, setSelectedRole] = useState(initialRole);
-  const [userId, setUserId] = useState("");
-  const [password, setPassword] = useState("");
-  const [otpCode, setOtpCode] = useState("");
-  const [sessionToken, setSessionToken] = useState("");
+  const [selectedRole, setSelectedRole] = useState<string>(initialRole);
+  const [userId, setUserId] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
+  const [otpCode, setOtpCode] = useState<string>("");
+  const [sessionToken, setSessionToken] = useState<string>("");
   const [step, setStep] = useState<"credentials" | "otp">("credentials");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isSendingEmailOtp, setIsSendingEmailOtp] = useState<boolean>(false);
 
   useEffect(() => {
     setSelectedRole(initialRole);
@@ -69,17 +72,19 @@ const Login = () => {
         throw new Error("Unexpected login response from server");
       }
 
-      localStorage.setItem("authToken", token);
+      // Store token & user (use key 'token' to match api interceptor)
+      localStorage.setItem("token", token);
       localStorage.setItem("isAuthenticated", "true");
       localStorage.setItem("userRole", user.role);
       localStorage.setItem("userId", user.loginId || user.email || "");
+      localStorage.setItem("user", JSON.stringify(user));
 
       const path = dashboardRouteByRole[user.role] || "/";
       toast.success(`Welcome! Logging in as ${user.role}`);
       navigate(path);
     } catch (err: any) {
       const message =
-        err?.response?.data?.message || err?.response?.data?.error || err.message || "Login failed";
+        err?.response?.data?.message || err?.response?.data?.error || err?.message || "Login failed";
       toast.error(message);
     } finally {
       setIsSubmitting(false);
@@ -107,17 +112,18 @@ const Login = () => {
         throw new Error("Unexpected verify-otp response from server");
       }
 
-      localStorage.setItem("authToken", token);
+      localStorage.setItem("token", token);
       localStorage.setItem("isAuthenticated", "true");
       localStorage.setItem("userRole", user.role);
       localStorage.setItem("userId", user.loginId || user.email || "");
+      localStorage.setItem("user", JSON.stringify(user));
 
       const path = dashboardRouteByRole[user.role] || "/";
       toast.success("OTP verified successfully");
       navigate(path);
     } catch (err: any) {
       const message =
-        err?.response?.data?.message || err?.response?.data?.error || err.message || "OTP verification failed";
+        err?.response?.data?.message || err?.response?.data?.error || err?.message || "OTP verification failed";
       toast.error(message);
     } finally {
       setIsSubmitting(false);
@@ -130,7 +136,36 @@ const Login = () => {
     setOtpCode("");
   };
 
-  const roleConfig = {
+  const handleSendEmailOtp = async () => {
+    if (!sessionToken) {
+      toast.error("Missing OTP session. Please login again.");
+      setStep("credentials");
+      return;
+    }
+
+    setIsSendingEmailOtp(true);
+    try {
+      const response = await apiClient.post("/auth/resend-otp-email", {
+        sessionToken,
+      });
+      const data = response.data as any;
+      if (data.sessionToken) {
+        setSessionToken(data.sessionToken);
+      }
+      toast.success("OTP sent to your registered email");
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.message || err?.response?.data?.error || err?.message || "Failed to send email OTP";
+      toast.error(message);
+    } finally {
+      setIsSendingEmailOtp(false);
+    }
+  };
+
+  const roleConfig: Record<
+    string,
+    { icon: any; label: string; idLabel: string; idPlaceholder: string; hint: string }
+  > = {
     student: {
       icon: GraduationCap,
       label: "Student",
@@ -226,9 +261,8 @@ const Login = () => {
 
                     <div className="space-y-2">
                       <Label htmlFor="password">Password</Label>
-                      <Input
+                      <PasswordInput
                         id="password"
-                        type="password"
                         placeholder="Enter your password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
@@ -266,12 +300,20 @@ const Login = () => {
                       />
                     </div>
 
-                    <div className="bg-muted p-3 rounded-lg">
+                    <div className="bg-muted p-3 rounded-lg space-y-2">
                       <p className="text-xs text-muted-foreground">
                         We have sent a one-time password to your registered contact (phone/email).
                         <br />
                         For development mode without SMS, check the server logs for the OTP code.
                       </p>
+                      <button
+                        type="button"
+                        className="text-xs text-primary underline disabled:opacity-50"
+                        disabled={isSubmitting || isSendingEmailOtp}
+                        onClick={handleSendEmailOtp}
+                      >
+                        Didn&apos;t receive SMS? Send OTP to your registered email.
+                      </button>
                     </div>
 
                     <div className="flex gap-3">

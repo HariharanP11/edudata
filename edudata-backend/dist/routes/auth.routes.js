@@ -44,6 +44,7 @@ router.post("/login", authCtrl.login);
 // OTP endpoints
 router.post("/verify-otp", authCtrl.verifyOtp);
 router.post("/resend-otp", authCtrl.resendOtp);
+router.post("/resend-otp-email", authCtrl.resendOtpEmail);
 // protected
 router.get("/me", auth_middleware_1.authMiddleware, authCtrl.me);
 exports.default = router;
