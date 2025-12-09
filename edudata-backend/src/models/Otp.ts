@@ -4,7 +4,7 @@ export interface IOtp extends Document {
   token: string;       // random session token (not the numeric code)
   userId?: mongoose.Types.ObjectId | null;
   contact: string;     // phone or email used to send OTP
-  code: string;        // numeric OTP (stored hashed optional; here plain for demo)
+  code: string;        // numeric OTP code, stored as a bcrypt hash
   expiresAt: Date;
   used: boolean;
 }

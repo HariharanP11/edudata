@@ -10,7 +10,8 @@ import twilio from "twilio";
 const JWT_SECRET = process.env.JWT_SECRET || "changeme";
 
 // OTP config from env (defaults)
-const ENABLE_OTP = process.env.ENABLE_OTP === "true";
+// NOTE: We enable OTP by default. Set ENABLE_OTP="false" in .env to fall back to single-step login.
+const ENABLE_OTP = process.env.ENABLE_OTP !== "false";
 const OTP_LENGTH = Number(process.env.OTP_LENGTH || 6);
 const OTP_EXPIRY_MINUTES = Number(process.env.OTP_EXPIRY_MINUTES || 5);
 const OTP_RATE_LIMIT_COUNT = Number(process.env.OTP_RATE_LIMIT_COUNT || 3);

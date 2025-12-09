@@ -9,19 +9,25 @@ async function seed() {
 
   console.log("Seeding data...");
 
-  const adminEmail = "admin@test.com";
-  let admin = await User.findOne({ email: adminEmail });
+  const adminLoginId = "admin";
+  const adminEmail = "admin@edudata.local";
+  const adminPassword = "admin123";
+
+  let admin = await User.findOne({
+    $or: [{ email: adminEmail }, { loginId: adminLoginId }],
+  });
 
   if (!admin) {
     admin = await User.create({
       name: "Admin",
       email: adminEmail,
-      password: await bcrypt.hash("password123", 10),
-      role: "admin"
+      loginId: adminLoginId,
+      password: await bcrypt.hash(adminPassword, 10),
+      role: "admin",
     });
   }
 
-  console.log("Admin user:", adminEmail);
+  console.log("Admin user seeded:", { loginId: adminLoginId, email: adminEmail });
 
   process.exit(0);
 }
